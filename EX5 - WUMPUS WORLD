@@ -1,0 +1,227 @@
+import random
+
+class WumpusWorld:
+    def __init__(self, size=4, max_actions=20):
+        self.size = size
+        self.max_actions = max_actions
+        self.actions_taken = 0
+        self.agent_alive = True
+        self.has_gold = False
+        self.wumpus_alive = True
+        self.bump = False
+        self.scream = False
+        self.grid = [["" for _ in range(size)] for _ in range(size)]
+
+        print(f"Valid indices are 0 to {self.size-1}")
+        while True:
+            try:
+                inp = input("Enter starting row and col for Agent (e.g., 0 0): ").split()
+                if len(inp) != 2:
+                    print("Please enter exactly two numbers.")
+                    continue
+                ar, ac = map(int, inp)
+                if 0 <= ar < size and 0 <= ac < size:
+                    self.agent_pos = (ar, ac)
+                    break
+                else:
+                    print("Coordinates out of bounds.")
+            except ValueError:
+                print("Please enter valid integers.")
+
+        print("\n1. Randomly generate world")
+        print("2. Manually place entities")
+        choice = input("Select option (1/2): ")
+
+        if choice == "1":
+            self.place_pits_random()
+            self.place_wumpus_random()
+            self.place_gold_random()
+        else:
+            self.place_manual()
+
+    def place_pits_random(self):
+        for i in range(self.size):
+            for j in range(self.size):
+                if (i, j) != self.agent_pos:
+                    if random.random() < 0.2:
+                        self.grid[i][j] += "P "
+
+    def place_wumpus_random(self):
+        while True:
+            x, y = random.randint(0, self.size-1), random.randint(0, self.size-1)
+            if (x, y) != self.agent_pos and "P" not in self.grid[x][y]:
+                self.grid[x][y] += "W "
+                break
+
+    def place_gold_random(self):
+        while True:
+            x, y = random.randint(0, self.size-1), random.randint(0, self.size-1)
+            if (x, y) != self.agent_pos:
+                self.grid[x][y] += "G "
+                break
+
+    def place_manual(self):
+        try:
+            num_pits = int(input("Enter number of pits: "))
+            for i in range(num_pits):
+                while True:
+                    try:
+                        r, c = map(int, input(f"Enter row and col for Pit {i+1}: ").split())
+                        if 0 <= r < self.size and 0 <= c < self.size:
+                            self.grid[r][c] += "P "
+                            break
+                        else:
+                            print("Out of bounds.")
+                    except ValueError:
+                        print("Invalid input.")
+
+            wr, wc = map(int, input("Enter row and col for Wumpus: ").split())
+            if 0 <= wr < self.size and 0 <= wc < self.size:
+                self.grid[wr][wc] += "W "
+
+            gr, gc = map(int, input("Enter row and col for Gold: ").split())
+            if 0 <= gr < self.size and 0 <= gc < self.size:
+                self.grid[gr][gc] += "G "
+        except ValueError:
+            print("Invalid input during manual setup.")
+
+    def get_possible_moves(self):
+        x, y = self.agent_pos
+        moves = []
+        if x > 0: moves.append("up")
+        if x < self.size - 1: moves.append("down")
+        if y > 0: moves.append("left")
+        if y < self.size - 1: moves.append("right")
+        return moves
+
+    def get_sensors(self):
+        x, y = self.agent_pos
+        smell = breeze = glitter = False
+        directions = [(1,0), (-1,0), (0,1), (0,-1)]
+
+        if "G" in self.grid[x][y]: glitter = True
+
+        for dx, dy in directions:
+            nx, ny = x+dx, y+dy
+            if 0 <= nx < self.size and 0 <= ny < self.size:
+                if "W" in self.grid[nx][ny]: smell = True
+                if "P" in self.grid[nx][ny]: breeze = True
+
+        return smell, breeze, glitter, self.bump, self.scream
+
+    def get_locations(self):
+        pits = []
+        wumpus = []
+        gold = []
+        for r in range(self.size):
+            for c in range(self.size):
+                content = self.grid[r][c]
+                if "P" in content: pits.append((r,c))
+                if "W" in content: wumpus.append((r,c))
+                if "G" in content: gold.append((r,c))
+        return pits, wumpus, gold
+
+    def move(self, direction):
+        self.bump = False
+        x, y = self.agent_pos
+        nx, ny = x, y
+        if direction == "up": nx -= 1
+        elif direction == "down": nx += 1
+        elif direction == "left": ny -= 1
+        elif direction == "right": ny += 1
+
+        if 0 <= nx < self.size and 0 <= ny < self.size:
+            self.agent_pos = (nx, ny)
+        else:
+            self.bump = True
+
+        self.check_status()
+
+    def grab(self):
+        x, y = self.agent_pos
+        if "G" in self.grid[x][y]:
+            self.has_gold = True
+            self.grid[x][y] = self.grid[x][y].replace("G", "")
+            print("Gold grabbed!")
+        else:
+            print("No gold here to grab.")
+
+    def check_status(self):
+        x, y = self.agent_pos
+        cell_content = self.grid[x][y]
+
+        if "P" in cell_content:
+            self.agent_alive = False
+            print(">> FAILURE: You fell into a Pit!")
+        elif "W" in cell_content:
+            self.agent_alive = False
+            print(">> FAILURE: You were eaten by the Wumpus!")
+
+    def display(self):
+        print("\nEnvironment Grid:")
+        # Display hidden grid (Only 'A' and '.')
+        for i in range(self.size):
+            row_str = ""
+            for j in range(self.size):
+                if (i, j) == self.agent_pos:
+                    row_str += "A\t"
+                else:
+                    row_str += ".\t"
+            print(row_str)
+
+        smell, breeze, glitter, bump, scream = self.get_sensors()
+        print(f"\nSensors: Smell={smell}, Breeze={breeze}, Glitter={glitter}, Bump={bump}, Scream={scream}")
+
+        # Display cheat info textually so user can move accordingly
+        pits, wumpus, gold = self.get_locations()
+        print(f"Locations -> Pits: {pits}, Wumpus: {wumpus}, Gold: {gold}")
+
+        print("Moves:", self.get_possible_moves())
+        print("Remaining actions:", self.max_actions - self.actions_taken)
+
+    def play(self):
+        # Print initial locations once clearly
+        p, w, g = self.get_locations()
+        print(f"\n--- Game Generated ---")
+        print(f"Pits at: {p}")
+        print(f"Wumpus at: {w}")
+        print(f"Gold at: {g}")
+        print(f"----------------------")
+
+        while self.agent_alive and self.actions_taken < self.max_actions:
+            self.display()
+
+            action = input("Action (up/down/left/right/grab): ").lower().strip()
+
+            valid_moves = ["up", "down", "left", "right", "grab"]
+            if action not in valid_moves:
+                print("Invalid action!")
+                continue
+
+            self.actions_taken += 1
+            if action in ["up", "down", "left", "right"]:
+                self.move(action)
+            elif action == "grab":
+                self.grab()
+
+            if self.has_gold:
+                print("\nSUCCESS! You found the Gold and won!")
+                return
+
+        if not self.agent_alive:
+            print("\nGAME OVER: You died.")
+        else:
+            print("\nGAME OVER: Out of actions.")
+
+try:
+    print("--- Wumpus World ---")
+    size_input = input("Enter world size (default 4): ")
+    size = int(size_input) if size_input else 4
+
+    actions_input = input("Enter max actions (default 20): ")
+    max_actions = int(actions_input) if actions_input else 20
+
+    game = WumpusWorld(size, max_actions)
+    game.play()
+except ValueError:
+    print("Invalid input for setup.")
