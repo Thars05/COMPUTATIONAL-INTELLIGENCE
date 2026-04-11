@@ -1,0 +1,145 @@
+import csv
+import math
+import random
+
+def calculate_distance(p1, p2, metric):
+    """Calculates distance between two N-dimensional points."""
+    if metric == "euclidean":
+        return math.sqrt(sum((a - b) ** 2 for a, b in zip(p1, p2)))
+    elif metric == "manhattan":
+        return sum(abs(a - b) for a, b in zip(p1, p2))
+    return 0
+
+def display_table(results, show_label=False, limit=None):
+    """Utility to print the F1-F13 features, Distance, Rank, and optional Class Label."""
+    header = "RANK  | " + " | ".join([f"F{i+1:<4}" for i in range(13)]) + " | DISTANCE"
+    if show_label:
+        header += " | CLASS"
+
+    # Slice the results if a limit is provided (for the Top K display)
+    display_data = results[:limit] if limit else results
+
+    print("\n" + "=" * 135)
+    print(header)
+    print("-" * 135)
+
+    for i, (dist, label, feats) in enumerate(display_data):
+        feat_str = " | ".join([f"{f:5.1f}" for f in feats[:13]])
+        row = f"{i+1:<5} | {feat_str} | {dist:<8.4f}"
+        if show_label:
+            row += f" | {label}"
+        print(row)
+
+def perform_knn():
+    # 1. Load Data
+    csv_filename = input("Enter the name of your CSV file: ")
+    data = []
+
+    try:
+        with open(csv_filename, 'r') as file:
+            reader = csv.reader(file)
+            for row in reader:
+                try:
+                    numeric_row = [float(val) if (val.strip() != '?' and val.strip() != '') else 0.0 for val in row]
+                    if len(numeric_row) >= 14:
+                        data.append(numeric_row)
+                except ValueError:
+                    continue
+    except FileNotFoundError:
+        print(f"Error: File '{csv_filename}' not found.")
+        return
+
+    # 2. Selection
+    sample_size = min(150, len(data))
+    sampled_data = random.sample(data, sample_size)
+    num_features = 13
+    print(f"\n[System] Sampled {len(sampled_data)} records. Proceeding with {num_features} features.")
+
+    # 3. Enter Query Point
+    print(f"\n--- Enter Query Point (F1 to F13) ---")
+    query_point = []
+    try:
+        for i in range(num_features):
+            val = float(input(f"Feature {i + 1} (F{i+1}): "))
+            query_point.append(val)
+    except ValueError:
+        print("Invalid input.")
+        return
+
+    dist_metric = input("Metric (euclidean/manhattan): ").lower().strip()
+    norm_choice = input("Normalization (minmax/zscore/none): ").lower().strip()
+
+    # 4. Normalization
+    processed_data = []
+    processed_query = list(query_point)
+
+    if norm_choice in ["minmax", "zscore"]:
+        for i in range(num_features):
+            col_vals = [row[i] for row in sampled_data]
+            if norm_choice == "minmax":
+                min_v, max_v = min(col_vals), max(col_vals)
+                denom = max_v - min_v
+                processed_query[i] = (query_point[i] - min_v) / denom if denom != 0 else 0
+                for idx, row in enumerate(sampled_data):
+                    if i == 0: processed_data.append([])
+                    processed_data[idx].append((row[i] - min_v) / denom if denom != 0 else 0)
+            elif norm_choice == "zscore":
+                mean_v = sum(col_vals) / len(col_vals)
+                std_v = math.sqrt(sum((x - mean_v) ** 2 for x in col_vals) / len(col_vals))
+                processed_query[i] = (query_point[i] - mean_v) / std_v if std_v != 0 else 0
+                for idx, row in enumerate(sampled_data):
+                    if i == 0: processed_data.append([])
+                    processed_data[idx].append((row[i] - mean_v) / std_v if std_v != 0 else 0)
+        for idx, row in enumerate(sampled_data):
+            processed_data[idx].append(sampled_data[idx][-1])
+    else:
+        processed_data = sampled_data
+
+    # 5. Distances
+    all_results = []
+    for row in processed_data:
+        features = row[:13]
+        label = 1 if int(row[-1]) > 0 else 0
+        dist = calculate_distance(processed_query, features, dist_metric)
+        all_results.append((dist, label, features))
+    all_results.sort(key=lambda x: x[0])
+
+    # 6. Display RANKED Distance Table (Full Sample)
+    print("\n--- STAGE 1: Distance Calculation & Ranking (Entire Sample) ---")
+    display_table(all_results, show_label=False)
+
+    # 7. K and Voting
+    try:
+        k_val = int(input("\nEnter K (must be odd): "))
+        while k_val % 2 == 0:
+            k_val = int(input("K must be ODD. Please enter again: "))
+        print("\nChoose Voting Method:\na) Weighted (Inverse Distance)\nb) Unweighted (Simple Majority)")
+        vote_choice = input("Select (a/b): ").lower().strip()
+    except ValueError:
+        print("Invalid input.")
+        return
+
+    # 8. Display TOP K ONLY with Labels
+    print(f"\n--- STAGE 2: Top {k_val} Neighbors with Class Labels ---")
+    display_table(all_results, show_label=True, limit=k_val)
+
+    # 9. Final Prediction
+    k_neighbors = all_results[:k_val]
+    if vote_choice == 'a':
+        score_0, score_1 = 0.0, 0.0
+        for dist, label, _ in k_neighbors:
+            weight = 1.0 / dist if dist != 0 else 100.0
+            if label == 0: score_0 += weight
+            else: score_1 += weight
+        prediction = 0 if score_0 > score_1 else 1
+        print(f"\nWeighted Scores -> Class(0): {score_0:.4f}, Class(1): {score_1:.4f}")
+    else:
+        votes = [n[1] for n in k_neighbors]
+        prediction = max(set(votes), key=votes.count)
+        print(f"\nUnweighted Votes List for Top K: {votes}")
+
+    print(f"FINAL RESULT: The new instance is classified as Class {prediction}")
+    print("=" * 135)
+
+if __name__ == "__main__":
+    perform_knn()
