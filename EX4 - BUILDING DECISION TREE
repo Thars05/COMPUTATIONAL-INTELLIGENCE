@@ -1,0 +1,233 @@
+import math
+import csv
+
+# ==========================================
+# 1. UTILITY FUNCTIONS
+# ==========================================
+
+def calculate_entropy(labels):
+    """Calculates Entropy: -Sum(p * log2(p)) without using Counter"""
+    if not labels:
+        return 0
+
+    total_count = len(labels)
+    counts = {}
+    for label in labels:
+        counts[label] = counts.get(label, 0) + 1
+
+    entropy = 0
+    for count in counts.values():
+        prob = count / total_count
+        entropy -= prob * math.log2(prob)
+    return entropy
+
+def get_distribution(labels):
+    """Helper function to get label counts for display"""
+    dist = {}
+    for label in labels:
+        dist[label] = dist.get(label, 0) + 1
+    return dist
+
+def get_column(data, index):
+    return [row[index] for row in data]
+
+def get_majority_class(labels):
+    """Returns the most frequent class in a list of labels"""
+    counts = get_distribution(labels)
+    best_label = None
+    max_count = -1
+    for label, count in counts.items():
+        if count > max_count:
+            max_count = count
+            best_label = label
+    return best_label
+
+def calculate_info_gain(data, feature_idx, target_idx):
+    """Computes Information Gain for a given feature recursively"""
+    target_labels = get_column(data, target_idx)
+    parent_entropy = calculate_entropy(target_labels)
+
+    feature_values = get_column(data, feature_idx)
+    unique_vals = set(feature_values)
+
+    weighted_entropy = 0
+    for val in unique_vals:
+        # Get labels where feature == val
+        subset_labels = [data[r][target_idx] for r in range(len(data)) if data[r][feature_idx] == val]
+        val_entropy = calculate_entropy(subset_labels)
+        weight = len(subset_labels) / len(data)
+        weighted_entropy += weight * val_entropy
+
+    return parent_entropy - weighted_entropy
+
+# ==========================================
+# 2. DECISION TREE BUILDER
+# ==========================================
+
+def build_tree(data, headers, available_features, target_index, feature_domains):
+    """Recursively constructs the Decision Tree using ID3 algorithm"""
+    target_labels = get_column(data, target_index)
+
+    # Base Case 1: All instances have the exact same target class
+    if len(set(target_labels)) == 1:
+        return target_labels[0]
+
+    # Base Case 2: No more features left to split on
+    if len(available_features) == 0:
+        return get_majority_class(target_labels)
+
+    # Find the feature with the highest Information Gain
+    best_feature_idx = -1
+    max_gain = -1
+
+    for feature_idx in available_features:
+        gain = calculate_info_gain(data, feature_idx, target_index)
+        if gain > max_gain:
+            max_gain = gain
+            best_feature_idx = feature_idx
+
+    # Base Case 3: Splitting doesn't give any new information (Gain == 0)
+    if max_gain <= 0 or best_feature_idx == -1:
+         return get_majority_class(target_labels)
+
+    best_feature_name = headers[best_feature_idx]
+
+    # Initialize tree dict representing the Node
+    tree = {best_feature_name: {}}
+
+    # Remove the selected feature from the available list
+    remaining_features = [f for f in available_features if f != best_feature_idx]
+
+    # Iterate over ALL global possible values for the chosen feature
+    # to handle subsets properly where some categories might be empty.
+    for val in feature_domains[best_feature_idx]:
+        # Filter subset of rows matching this value
+        subset = [row for row in data if row[best_feature_idx] == val]
+
+        if not subset:
+            # If a subset is empty, attach a leaf with the parent's majority class
+            tree[best_feature_name][val] = get_majority_class(target_labels)
+        else:
+            # Recursively build branches
+            tree[best_feature_name][val] = build_tree(subset, headers, remaining_features, target_index, feature_domains)
+
+    return tree
+
+"""def print_tree(tree, indent=""):
+    Recursively formats and prints the Decision tree structure nice
+    # If it's just a class label (Leaf node)
+    if not isinstance(tree, dict):
+        print(f" => [Result: {tree}]")
+        return
+
+    for feature, branches in tree.items():
+        print(f"\n{indent}<{feature}> ")
+        for val, subtree in branches.items():
+            print(f"{indent}    |--- {val}", end="")
+            if isinstance(subtree, dict):
+                # We need to branch deeper
+                print_tree(subtree, indent + "        ")
+            else:
+                # We hit a leaf
+                print(f" => [Result: {subtree}]")"""
+
+# ==========================================
+# 3. MAIN SCRIPT
+# ==========================================
+
+def perform_decision_tree_analysis():
+    # 1. Load Data
+    filename = input("Enter the CSV filename: ")
+    data = []
+    try:
+        with open(filename, 'r') as file:
+            reader = csv.reader(file)
+            headers = next(reader)
+            # Load non-empty rows
+            for row in reader:
+                if len(row) > 0:
+                    data.append(row)
+    except FileNotFoundError:
+        print("File not found.")
+        return
+
+    if not data:
+        print("Dataset is empty.")
+        return
+
+    target_index = len(headers) - 1
+    target_labels = get_column(data, target_index)
+
+    # 2. Calculate Parent Entropy
+    parent_entropy = calculate_entropy(target_labels)
+    print(f"\nSTEP 1: CALCULATE TOTAL ENTROPY")
+    print(f"Total Records: {len(data)}")
+    print(f"Target Distribution: {get_distribution(target_labels)}")
+    print(f"Entropy(S) = {parent_entropy:.4f}")
+    print("-" * 50)
+
+    # 3. Calculate Information Gain for each feature manually for the initial console printout
+    features_gains = {}
+
+    print("STEP 2: CALCULATE INFORMATION GAIN FOR EACH FEATURE")
+    for i in range(len(headers) - 1):
+        feature_name = headers[i]
+        feature_values = get_column(data, i)
+        unique_vals = set(feature_values)
+
+        print(f"\nAnalyzing Feature: {feature_name}")
+        weighted_entropy = 0
+
+        # Calculate Entropy for each unique value in the feature
+        for val in unique_vals:
+            # Get subset of target labels where feature == val
+            subset_labels = [data[r][target_index] for r in range(len(data)) if data[r][i] == val]
+            val_entropy = calculate_entropy(subset_labels)
+            weight = len(subset_labels) / len(data)
+            weighted_entropy += weight * val_entropy
+
+            print(f"  - Value '{val}': Count={len(subset_labels)}, Entropy={val_entropy:.4f}")
+
+        # Information Gain = Parent Entropy - Weighted Average Entropy
+        info_gain = parent_entropy - weighted_entropy
+        features_gains[feature_name] = info_gain
+
+        print(f"Weighted Average Entropy for {feature_name} = {weighted_entropy:.4f}")
+        print(f"Information Gain({feature_name}) = {parent_entropy:.4f} - {weighted_entropy:.4f} = {info_gain:.4f}")
+
+    # 4. Show Root Node Step Results
+    print("\n" + "="*50)
+    print("ROOT SPLIT SUMMARY: INFORMATION GAINS")
+    print("="*50)
+    best_feature = None
+    max_gain = -1
+    for feat, gain in features_gains.items():
+        print(f"{feat:<15}: {gain:.4f}")
+        if gain > max_gain:
+            max_gain = gain
+            best_feature = feat
+
+    print("-" * 50)
+    print(f"THE ROOT NODE IS: {best_feature.upper()}")
+    print(f"Reason: Highest Information Gain ({max_gain:.4f})")
+    print("="*50)
+
+    # 5. Build and print the complete Decision tree recursively
+   # print("\nSTEP 3: BUILDING THE ENTIRE TREE...\n")
+
+    available_features = list(range(len(headers) - 1))
+
+    # Storing domains so when recursive branches are drawn they include options
+    # even if one of those branches becomes structurally empty during recursions
+    feature_domains = {i: set([row[i] for row in data]) for i in available_features}
+
+    trained_tree = build_tree(data, headers, available_features, target_index, feature_domains)
+
+""" print("==================================================")
+    print(" FINAL DECISION TREE STRUCTURE")
+    print("==================================================")
+    print_tree(trained_tree)
+    print("\n==================================================")"""
+
+if __name__ == "__main__":
+    perform_decision_tree_analysis()
