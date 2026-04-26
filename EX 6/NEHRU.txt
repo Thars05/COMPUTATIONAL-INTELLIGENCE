@@ -1,0 +1,66 @@
+% --- Facts: Gender ---
+male(motilal_nehru).
+male(jawaharlal_nehru).
+male(feroze_gandhi).
+male(rajiv_gandhi).
+male(sanjay_gandhi).
+male(rahul_gandhi).
+male(varun_gandhi).
+
+female(swarup_rani).
+female(kamala_nehru).
+female(indira_gandhi).
+female(sonia_gandhi).
+female(maneka_gandhi).
+female(priyanka_gandhi).
+
+% --- Facts: Parents ---
+% Format: parent(Parent, Child)
+parent(motilal_nehru, jawaharlal_nehru).
+parent(swarup_rani, jawaharlal_nehru).
+
+parent(jawaharlal_nehru, indira_gandhi).
+parent(kamala_nehru, indira_gandhi).
+
+parent(indira_gandhi, rajiv_gandhi).
+parent(feroze_gandhi, rajiv_gandhi).
+
+parent(indira_gandhi, sanjay_gandhi).
+parent(feroze_gandhi, sanjay_gandhi).
+
+parent(rajiv_gandhi, rahul_gandhi).
+parent(sonia_gandhi, rahul_gandhi).
+
+parent(rajiv_gandhi, priyanka_gandhi).
+parent(sonia_gandhi, priyanka_gandhi).
+
+parent(sanjay_gandhi, varun_gandhi).
+parent(maneka_gandhi, varun_gandhi).
+
+% --- Rules: Relationships ---
+
+% Father and Mother
+father(X, Y) :- parent(X, Y), male(X).
+mother(X, Y) :- parent(X, Y), female(X).
+
+% Grandparents
+grandparent(X, Z) :- parent(X, Y), parent(Y, Z).
+grandfather(X, Z) :- grandparent(X, Z), male(X).
+grandmother(X, Z) :- grandparent(X, Z), female(X).
+
+% Siblings
+% X and Y are siblings if they share the same parent and are not the same person.
+sibling(X, Y) :- parent(P, X), parent(P, Y), X \= Y.
+
+% Uncle and Aunt
+% X is Y's uncle if X is a sibling of Y's parent and is male.
+uncle(X, Y) :- male(X), sibling(X, P), parent(P, Y).
+aunt(X, Y) :- female(X), sibling(X, P), parent(P, Y).
+
+% Cousins
+% X and Y are cousins if their parents are siblings.
+cousin(X, Y) :- parent(P1, X), parent(P2, Y), sibling(P1, P2).
+
+% Ancestor (Recursive rule)
+ancestor(X, Y) :- parent(X, Y).
+ancestor(X, Y) :- parent(X, Z), ancestor(Z, Y).
